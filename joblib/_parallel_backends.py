@@ -315,6 +315,7 @@ class AutoBatchingMixin(object):
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
             self._last_recorded_batch_size = batch_size
+            eta = 0.8  # how fast should we forget the past.
             if old_duration == self._DEFAULT_SMOOTHED_BATCH_DURATION:
                 # First record of duration for this batch size after the last
                 # reset.
@@ -322,7 +323,7 @@ class AutoBatchingMixin(object):
             else:
                 # Update the exponentially weighted average of the duration of
                 # batch for the current effective size.
-                new_duration = 0.8 * old_duration + 0.2 * duration
+                new_duration = eta * old_duration + (1 - eta) * duration
             self._smoothed_batch_duration = new_duration
 
     def reset_batch_stats(self):
