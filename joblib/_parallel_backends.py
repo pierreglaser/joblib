@@ -315,7 +315,7 @@ class AutoBatchingMixin(object):
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
             self._last_recorded_batch_size = batch_size
-            eta = 0.8  # how fast should we forget the past.
+            eta = 0  # how fast should we forget the past. 0 = no past
             if old_duration == self._DEFAULT_SMOOTHED_BATCH_DURATION:
                 # First record of duration for this batch size after the last
                 # reset.
