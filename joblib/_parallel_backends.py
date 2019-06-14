@@ -314,7 +314,6 @@ class AutoBatchingMixin(object):
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
-            self._last_recorded_batch_size = batch_size
             if old_duration == self._DEFAULT_SMOOTHED_BATCH_DURATION:
                 # First record of duration for this batch size after the last
                 # reset.
@@ -324,6 +323,11 @@ class AutoBatchingMixin(object):
                 # batch for the current effective size.
                 new_duration = self.eta * old_duration + (
                     1 - self.eta) * duration
+                self._last_recorded_batch_size = int((
+                    self.eta * self._last_recorded_batch_size) + (
+                        1 - self.eta) * batch_size)
+                print(self._last_recorded_batch_size)
+
             self._smoothed_batch_duration = new_duration
 
     def reset_batch_stats(self):
