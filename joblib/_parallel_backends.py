@@ -86,7 +86,7 @@ class ParallelBackendBase(with_metaclass(ABCMeta)):
         """Determine the optimal batch size"""
         return 1
 
-    def batch_completed(self, batch_size, duration):
+    def batch_completed(self, batch_size, duration, idx):
         """Callback indicate how long it took to run a batch"""
 
     def get_exceptions(self):
@@ -254,6 +254,7 @@ class AutoBatchingMixin(object):
     def __init__(self):
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
+        self._batch_info = []
 
     def compute_batch_size(self):
         """Determine the optimal batch size"""
@@ -302,8 +303,9 @@ class AutoBatchingMixin(object):
 
         return batch_size
 
-    def batch_completed(self, batch_size, duration):
+    def batch_completed(self, batch_size, duration, idx):
         """Callback indicate how long it took to run a batch"""
+        self._batch_info.append((idx, batch_size, duration))
         if batch_size == self._effective_batch_size:
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
@@ -325,6 +327,7 @@ class AutoBatchingMixin(object):
         """
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
+        self._batch_info = []
 
 
 class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):

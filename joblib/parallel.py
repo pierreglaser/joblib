@@ -292,17 +292,18 @@ class BatchCompletionCallBack(object):
     processed.
 
     """
-    def __init__(self, dispatch_timestamp, batch_size, parallel):
+    def __init__(self, dispatch_timestamp, batch_size, parallel, idx):
         self.dispatch_timestamp = dispatch_timestamp
         self.batch_size = batch_size
         self.parallel = parallel
+        self.idx = idx
 
     def __call__(self, out):
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_duration = time.time() - self.dispatch_timestamp
 
-        self.parallel._backend.batch_completed(self.batch_size,
-                                               this_batch_duration)
+        self.parallel._backend.batch_completed(
+            self.batch_size, this_batch_duration, idx=self.idx)
         self.parallel.print_progress()
         with self.parallel._lock:
             if self.parallel._original_iterator is not None:
@@ -599,7 +600,6 @@ class Parallel(Logger):
         self.verbose = verbose
         self.timeout = timeout
         self.pre_dispatch = pre_dispatch
-        self._batch_sizes = []
 
         if isinstance(max_nbytes, _basestring):
             max_nbytes = memstr_to_bytes(max_nbytes)
@@ -711,7 +711,8 @@ class Parallel(Logger):
         self.n_dispatched_batches += 1
 
         dispatch_timestamp = time.time()
-        cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+        cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self,
+                                     idx=self.n_dispatched_batches)
         with self._lock:
             job_idx = len(self._jobs)
             job = self._backend.apply_async(batch, callback=cb)
@@ -744,8 +745,6 @@ class Parallel(Logger):
 
         """
         if self.batch_size == 'auto':
-            # record the previous batch size
-            self._batch_sizes.append(self._backend._effective_batch_size)
             batch_size = self._backend.compute_batch_size()
         else:
             # Fixed batch size strategy
@@ -944,7 +943,6 @@ class Parallel(Logger):
             if hasattr(self._backend, 'stop_call'):
                 self._backend.stop_call()
             if not self._managed_backend:
-                self._batch_sizes = []
                 self._terminate_backend()
             self._jobs = list()
             self._pickle_cache = None
