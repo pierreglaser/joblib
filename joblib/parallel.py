@@ -599,6 +599,7 @@ class Parallel(Logger):
         self.verbose = verbose
         self.timeout = timeout
         self.pre_dispatch = pre_dispatch
+        self._batch_sizes = []
 
         if isinstance(max_nbytes, _basestring):
             max_nbytes = memstr_to_bytes(max_nbytes)
@@ -743,6 +744,8 @@ class Parallel(Logger):
 
         """
         if self.batch_size == 'auto':
+            # record the previous batch size
+            self._batch_sizes.append(self._backend._effective_batch_size)
             batch_size = self._backend.compute_batch_size()
         else:
             # Fixed batch size strategy
@@ -941,6 +944,7 @@ class Parallel(Logger):
             if hasattr(self._backend, 'stop_call'):
                 self._backend.stop_call()
             if not self._managed_backend:
+                self._batch_sizes = []
                 self._terminate_backend()
             self._jobs = list()
             self._pickle_cache = None
