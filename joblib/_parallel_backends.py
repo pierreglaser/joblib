@@ -255,6 +255,7 @@ class AutoBatchingMixin(object):
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
         self._batch_info = []
+        self._highest_batch_no_seen = -1
 
     def compute_batch_size(self):
         """Determine the optimal batch size"""
@@ -306,7 +307,9 @@ class AutoBatchingMixin(object):
     def batch_completed(self, batch_size, duration, idx):
         """Callback indicate how long it took to run a batch"""
         self._batch_info.append((idx, batch_size, duration))
-        if batch_size == self._effective_batch_size:
+        # if batch_size == self._effective_batch_size:
+        if idx > self._highest_batch_no_seen:
+            self._highest_batch_no_seen = idx
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
