@@ -327,7 +327,9 @@ class AutoBatchingMixin(object):
                         1 - self.eta) * batch_size)
 
             self._smoothed_batch_duration = new_duration
-            self._batch_info.append([idx, batch_size, duration, new_duration])
+
+        self._batch_info.append([idx, batch_size, duration,
+                                 self._smoothed_batch_duration])
 
     def reset_batch_stats(self):
         """Reset batch statistics to default values.
