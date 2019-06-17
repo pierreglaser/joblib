@@ -306,8 +306,7 @@ class AutoBatchingMixin(object):
     def batch_completed(self, batch_size, duration, idx):
         """Callback indicate how long it took to run a batch"""
         # if batch_size == self._effective_batch_size:
-        # if idx > self._highest_batch_no_seen:
-        if True:
+        if idx > self._highest_batch_no_seen:
             used_for_batch_size_estimation = True
             self._highest_batch_no_seen = idx
             # Update the smoothed streaming estimate of the duration of a batch
