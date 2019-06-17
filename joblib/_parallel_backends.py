@@ -270,11 +270,13 @@ class AutoBatchingMixin(object):
             # The current batch size is too small: the duration of the
             # processing of a batch of task is not large enough to hide
             # the scheduling overhead.
-            ideal_batch_size = int(old_batch_size *
-                                   self.MIN_IDEAL_BATCH_DURATION /
-                                   batch_duration)
+
             # Multiply by two to limit oscilations between min and max.
-            batch_size = max(2 * ideal_batch_size, 1)
+            batch_size = int(min(2 * old_batch_size *
+                                   self.MIN_IDEAL_BATCH_DURATION /
+                                   batch_duration,
+                                   2*old_batch_size))
+            batch_size = max(batch_size, 1)
             self._effective_batch_size = batch_size
             if self.parallel.verbose >= 10:
                 self.parallel._print(
