@@ -294,15 +294,6 @@ class AutoBatchingMixin(object):
             # No batch size adjustment
             batch_size = old_batch_size
 
-        if batch_size != old_batch_size:
-            # Reset estimation of the smoothed mean batch duration: this
-            # estimate is updated in the multiprocessing apply_async
-            # CallBack as long as the batch_size is constant. Therefore
-            # we need to reset the estimate whenever we re-tune the batch
-            # size.
-            self._smoothed_batch_duration = \
-                self._DEFAULT_SMOOTHED_BATCH_DURATION
-
         return batch_size
 
     def batch_completed(self, batch_size, duration, idx):
