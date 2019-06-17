@@ -307,7 +307,6 @@ class AutoBatchingMixin(object):
 
     def batch_completed(self, batch_size, duration, idx):
         """Callback indicate how long it took to run a batch"""
-        self._batch_info.append((idx, batch_size, duration))
         # if batch_size == self._effective_batch_size:
         if idx > self._highest_batch_no_seen:
             self._highest_batch_no_seen = idx
@@ -326,9 +325,9 @@ class AutoBatchingMixin(object):
                 self._last_recorded_batch_size = int((
                     self.eta * self._last_recorded_batch_size) + (
                         1 - self.eta) * batch_size)
-                print(self._last_recorded_batch_size)
 
             self._smoothed_batch_duration = new_duration
+            self._batch_info.append((idx, batch_size, new_duration))
 
     def reset_batch_stats(self):
         """Reset batch statistics to default values.
