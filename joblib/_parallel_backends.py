@@ -333,7 +333,9 @@ class AutoBatchingMixin(object):
 
         self._batch_info.append([idx, batch_size, duration,
                                  self._smoothed_batch_duration,
-                                 used_for_batch_size_estimation])
+                                 used_for_batch_size_estimation,
+                                 self._highest_batch_no_seen,
+                                 ])
 
     def reset_batch_stats(self):
         """Reset batch statistics to default values.
