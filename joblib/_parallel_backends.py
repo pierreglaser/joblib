@@ -259,6 +259,9 @@ class AutoBatchingMixin(object):
         self._last_recorded_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
 
     def compute_batch_size(self):
+        return self._effective_batch_size
+
+    def _compute_batch_size(self):
         """Determine the optimal batch size"""
         old_batch_size = self._last_recorded_batch_size
         batch_duration = self._smoothed_batch_duration
@@ -327,6 +330,8 @@ class AutoBatchingMixin(object):
         self._batch_info.append([idx, batch_size, duration,
                                  self._smoothed_batch_duration,
                                  used_for_batch_size_estimation])
+
+        self._compute_batch_size()
 
     def reset_batch_stats(self):
         """Reset batch statistics to default values.
