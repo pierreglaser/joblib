@@ -274,12 +274,13 @@ class AutoBatchingMixin(object):
             ideal_batch_size = int(old_batch_size *
                                    self.MIN_IDEAL_BATCH_DURATION /
                                    batch_duration)
+            # Multiply by two to limit oscilations between min and max.
+            ideal_batch_size *= 2
+
             # dont increase the batch size too fast to limit huge batch sizes
             # potentially leading to starving worker
             ideal_batch_size = min(2 * old_batch_size, ideal_batch_size)
-
-            # Multiply by two to limit oscilations between min and max.
-            batch_size = max(2 * ideal_batch_size, 1)
+            batch_size = max(ideal_batch_size, 1)
             self._effective_batch_size = batch_size
             if self.parallel.verbose >= 10:
                 self.parallel._print(
