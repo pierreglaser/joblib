@@ -295,17 +295,20 @@ class BatchCompletionCallBack(object):
     processed.
 
     """
-    def __init__(self, dispatch_timestamp, batch_size, parallel):
+    def __init__(self, dispatch_timestamp, batch_size, parallel, idx):
         self.dispatch_timestamp = dispatch_timestamp
         self.batch_size = batch_size
         self.parallel = parallel
+        self.idx = idx
 
     def __call__(self, out):
         self.parallel.n_completed_tasks += self.batch_size
-        this_batch_duration = time.time() - self.dispatch_timestamp
+        this_batch_end_to_end_duration = time.time() - self.dispatch_timestamp
+        time_spent_in_worker = out._result[1]
 
-        self.parallel._backend.batch_completed(self.batch_size,
-                                               this_batch_duration)
+        self.parallel._backend.batch_completed(
+            self.batch_size, this_batch_end_to_end_duration,
+            time_spent_in_worker, idx=self.idx)
         self.parallel.print_progress()
         with self.parallel._lock:
             if self.parallel._original_iterator is not None:
@@ -713,7 +716,8 @@ class Parallel(Logger):
         self.n_dispatched_batches += 1
 
         dispatch_timestamp = time.time()
-        cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self)
+        cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self,
+                                     idx=self.n_dispatched_batches)
         with self._lock:
             job_idx = len(self._jobs)
             job = self._backend.apply_async(batch, callback=cb)
