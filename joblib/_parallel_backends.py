@@ -331,6 +331,7 @@ class AutoBatchingMixin(object):
         """
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
+        self._batch_info = []
 
 
 class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
