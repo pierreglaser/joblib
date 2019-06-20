@@ -263,7 +263,7 @@ class AutoBatchingMixin(object):
         return self._effective_batch_size
 
     def _compute_batch_size(self):
-        old_batch_size = self._effective_batch_size
+        old_batch_size = self._last_recorded_batch_size
         batch_duration = self._smoothed_batch_duration
         if (batch_duration > 0 and
                 batch_duration < self.MIN_IDEAL_BATCH_DURATION):
@@ -328,10 +328,11 @@ class AutoBatchingMixin(object):
                 new_duration = self.eta * old_duration + (
                     1 - self.eta) * duration
             self._smoothed_batch_duration = new_duration
-            # update the batch size strategy
-            self._compute_batch_size()
         else:
             used_for_batch_size_estimation = False
+
+        # update the batch size strategy
+        self._compute_batch_size()
         self._batch_info.append([idx, batch_size, duration,
                                  worker_duration,
                                  self._smoothed_batch_duration,
