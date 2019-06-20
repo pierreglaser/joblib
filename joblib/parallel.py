@@ -221,8 +221,11 @@ class BatchedCalls(object):
         # Set the default nested backend to self._backend but do not set the
         # change the default number of processes to -1
         with parallel_backend(self._backend, n_jobs=self._n_jobs):
-            return [func(*args, **kwargs)
+            t0 = time.monotonic()
+            res = [func(*args, **kwargs)
                     for func, args, kwargs in self.items]
+            compute_time = time.monotonic() - t0
+            return res, compute_time
 
     def __len__(self):
         return self._size
@@ -830,9 +833,9 @@ class Parallel(Logger):
 
             try:
                 if getattr(self._backend, 'supports_timeout', False):
-                    self._output.extend(job.get(timeout=self.timeout))
+                    self._output.extend(job.get(timeout=self.timeout)[0])
                 else:
-                    self._output.extend(job.get())
+                    self._output.extend(job.get()[0])
 
             except BaseException as exception:
                 # Note: we catch any BaseException instead of just Exception
