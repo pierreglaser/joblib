@@ -590,7 +590,7 @@ class Parallel(Logger):
     def __init__(self, n_jobs=None, backend=None, verbose=0, timeout=None,
                  pre_dispatch='2 * n_jobs', batch_size='auto',
                  temp_folder=None, max_nbytes='1M', mmap_mode='r',
-                 prefer=None, require=None):
+                 prefer=None, require=None, eta=None):
         active_backend, context_n_jobs = get_active_backend(
             prefer=prefer, require=require, verbose=verbose)
         if backend is None and n_jobs is None:
@@ -616,6 +616,7 @@ class Parallel(Logger):
             prefer=prefer,
             require=require,
             verbose=max(0, self.verbose - 50),
+            eta=eta
         )
         if DEFAULT_MP_CONTEXT is not None:
             self._backend_args['context'] = DEFAULT_MP_CONTEXT

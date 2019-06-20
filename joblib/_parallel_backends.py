@@ -316,7 +316,8 @@ class AutoBatchingMixin(object):
             else:
                 # Update the exponentially weighted average of the duration of
                 # batch for the current effective size.
-                new_duration = 0.8 * old_duration + 0.2 * duration
+                new_duration = self.eta * old_duration + (
+                    1 - self.eta) * worker_duration
             self._smoothed_batch_duration = new_duration
         self._batch_info.append([idx, batch_size, duration,
                                  worker_duration,
@@ -468,7 +469,8 @@ class LokyBackend(AutoBatchingMixin, ParallelBackendBase):
     supports_timeout = True
 
     def configure(self, n_jobs=1, parallel=None, prefer=None, require=None,
-                  idle_worker_timeout=300, **memmappingexecutor_args):
+                  idle_worker_timeout=300, eta=None,
+                  **memmappingexecutor_args):
         """Build a process executor and return the number of workers"""
         n_jobs = self.effective_n_jobs(n_jobs)
         if n_jobs == 1:
@@ -480,6 +482,7 @@ class LokyBackend(AutoBatchingMixin, ParallelBackendBase):
             initializer=self.limit_clib_threads,
             **memmappingexecutor_args)
         self.parallel = parallel
+        self.eta = eta
         return n_jobs
 
     def effective_n_jobs(self, n_jobs):
