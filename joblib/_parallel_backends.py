@@ -323,7 +323,7 @@ class AutoBatchingMixin(object):
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
-            new_duration = worker_duration
+            new_duration = duration
             self._last_recorded_batch_size = batch_size
             self._smoothed_batch_duration = new_duration
         else:
