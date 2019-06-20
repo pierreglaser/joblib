@@ -255,6 +255,7 @@ class AutoBatchingMixin(object):
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
         self._batch_info = []
+        self._highest_batch_no_seen = 0
 
     def compute_batch_size(self):
         """Determine the optimal batch size"""
@@ -305,7 +306,9 @@ class AutoBatchingMixin(object):
 
     def batch_completed(self, batch_size, duration, worker_duration, idx):
         """Callback indicate how long it took to run a batch"""
+        _highest_batch_number_seen = self._highest_batch_no_seen
         if batch_size == self._effective_batch_size:
+            self._highest_batch_no_seen = idx
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
@@ -322,6 +325,7 @@ class AutoBatchingMixin(object):
         self._batch_info.append([idx, batch_size, duration,
                                  worker_duration,
                                  self._smoothed_batch_duration,
+                                 _highest_batch_number_seen,
                                  ])
 
     def reset_batch_stats(self):
@@ -332,6 +336,7 @@ class AutoBatchingMixin(object):
         self._effective_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
         self._batch_info = []
+        self._highest_batch_no_seen = 0
 
 
 class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
