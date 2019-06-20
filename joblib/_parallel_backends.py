@@ -257,6 +257,7 @@ class AutoBatchingMixin(object):
         self._smoothed_batch_duration = self._DEFAULT_SMOOTHED_BATCH_DURATION
         self._batch_info = []
         self._highest_batch_no_seen = 0
+        self._last_recorded_batch_size = self._DEFAULT_EFFECTIVE_BATCH_SIZE
 
     def compute_batch_size(self):
         """Determine the optimal batch size"""
@@ -297,36 +298,22 @@ class AutoBatchingMixin(object):
             # No batch size adjustment
             batch_size = old_batch_size
 
-        if batch_size != old_batch_size:
-            # Reset estimation of the smoothed mean batch duration: this
-            # estimate is updated in the multiprocessing apply_async
-            # CallBack as long as the batch_size is constant. Therefore
-            # we need to reset the estimate whenever we re-tune the batch
-            # size.
-            self._smoothed_batch_duration = \
-                self._DEFAULT_SMOOTHED_BATCH_DURATION
-
         return batch_size
 
     def batch_completed(self, batch_size, duration, worker_duration,
                         previous_smoothed_batch_duration, idx):
         """Callback indicate how long it took to run a batch"""
         _highest_batch_number_seen = self._highest_batch_no_seen
-        if batch_size == self._effective_batch_size:
+        # update our estimated batch duration only with the most recently SENT
+        # (and not RECIEVED) batch.
+        if idx > self._highest_batch_no_seen:
             used_for_batch_size_estimation = True
             self._highest_batch_no_seen = idx
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
             old_duration = self._smoothed_batch_duration
-            if old_duration == self._DEFAULT_SMOOTHED_BATCH_DURATION:
-                # First record of duration for this batch size after the last
-                # reset.
-                new_duration = worker_duration
-            else:
-                # Update the exponentially weighted average of the duration of
-                # batch for the current effective size.
-                new_duration = self.eta * old_duration + (
-                    1 - self.eta) * duration
+            new_duration = worker_duration
+            self._last_recorded_batch_size = batch_size
             self._smoothed_batch_duration = new_duration
         else:
             used_for_batch_size_estimation = False
