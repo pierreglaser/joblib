@@ -308,6 +308,7 @@ class AutoBatchingMixin(object):
         """Callback indicate how long it took to run a batch"""
         _highest_batch_number_seen = self._highest_batch_no_seen
         if batch_size == self._effective_batch_size:
+            used_for_batch_size_estimation = True
             self._highest_batch_no_seen = idx
             # Update the smoothed streaming estimate of the duration of a batch
             # from dispatch to completion
@@ -322,9 +323,12 @@ class AutoBatchingMixin(object):
                 new_duration = self.eta * old_duration + (
                     1 - self.eta) * worker_duration
             self._smoothed_batch_duration = new_duration
+        else:
+            used_for_batch_size_estimation = False
         self._batch_info.append([idx, batch_size, duration,
                                  worker_duration,
                                  self._smoothed_batch_duration,
+                                 used_for_batch_size_estimation,
                                  _highest_batch_number_seen,
                                  ])
 
