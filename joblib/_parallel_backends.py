@@ -323,7 +323,7 @@ class AutoBatchingMixin(object):
                 # Update the exponentially weighted average of the duration of
                 # batch for the current effective size.
                 new_duration = self.eta * old_duration + (
-                    1 - self.eta) * worker_duration
+                    1 - self.eta) * duration
             self._smoothed_batch_duration = new_duration
         else:
             used_for_batch_size_estimation = False
