@@ -295,8 +295,11 @@ class BatchCompletionCallBack(object):
     processed.
 
     """
-    def __init__(self, dispatch_timestamp, batch_size, parallel, idx):
+    def __init__(self, dispatch_timestamp, batch_size, parallel,
+                 previous_smoothed_batch_duration, idx):
         self.dispatch_timestamp = dispatch_timestamp
+        self._previous_smoothed_batch_duration = \
+            previous_smoothed_batch_duration
         self.batch_size = batch_size
         self.parallel = parallel
         self.idx = idx
@@ -308,7 +311,8 @@ class BatchCompletionCallBack(object):
 
         self.parallel._backend.batch_completed(
             self.batch_size, this_batch_end_to_end_duration,
-            time_spent_in_worker, idx=self.idx)
+            time_spent_in_worker, self._previous_smoothed_batch_duration,
+            idx=self.idx)
         self.parallel.print_progress()
         with self.parallel._lock:
             if self.parallel._original_iterator is not None:
@@ -718,7 +722,9 @@ class Parallel(Logger):
 
         dispatch_timestamp = time.time()
         cb = BatchCompletionCallBack(dispatch_timestamp, len(batch), self,
-                                     idx=self.n_dispatched_batches)
+                                     batch._previous_smoothed_batch_duration,
+                                     idx=self.n_dispatched_batches,
+                                     )
         with self._lock:
             job_idx = len(self._jobs)
             job = self._backend.apply_async(batch, callback=cb)
@@ -751,15 +757,18 @@ class Parallel(Logger):
 
         """
         if self.batch_size == 'auto':
+            smoothed_duration = self._backend._smoothed_batch_duration
             batch_size = self._backend.compute_batch_size()
         else:
             # Fixed batch size strategy
+            smoothed_duration = 0
             batch_size = self.batch_size
 
         with self._lock:
             tasks = BatchedCalls(itertools.islice(iterator, batch_size),
                                  self._backend.get_nested_backend(),
                                  self._pickle_cache)
+            tasks._previous_smoothed_batch_duration = smoothed_duration
             if len(tasks) == 0:
                 # No more tasks available in the iterator: tell caller to stop.
                 return False

@@ -86,7 +86,8 @@ class ParallelBackendBase(with_metaclass(ABCMeta)):
         """Determine the optimal batch size"""
         return 1
 
-    def batch_completed(self, batch_size, duration, worker_duration, idx):
+    def batch_completed(self, batch_size, duration, worker_duration,
+                        previous_smoothed_duration, idx):
         """Callback indicate how long it took to run a batch"""
 
     def get_exceptions(self):
@@ -304,7 +305,8 @@ class AutoBatchingMixin(object):
 
         return batch_size
 
-    def batch_completed(self, batch_size, duration, worker_duration, idx):
+    def batch_completed(self, batch_size, duration, worker_duration,
+                        previous_smoothed_batch_duration, idx):
         """Callback indicate how long it took to run a batch"""
         _highest_batch_number_seen = self._highest_batch_no_seen
         if batch_size == self._effective_batch_size:
@@ -328,6 +330,7 @@ class AutoBatchingMixin(object):
         self._batch_info.append([idx, batch_size, duration,
                                  worker_duration,
                                  self._smoothed_batch_duration,
+                                 previous_smoothed_batch_duration,
                                  used_for_batch_size_estimation,
                                  _highest_batch_number_seen,
                                  ])
