@@ -262,15 +262,19 @@ class AutoBatchingMixin(object):
         """Determine the optimal batch size"""
         old_batch_size = self._effective_batch_size
         batch_duration = self._smoothed_batch_duration
+        if self._smoothed_batch_duration == 0:
+            return old_batch_size
+        min_ideal_batch_size = int(
+            self.MIN_IDEAL_BATCH_DURATION / batch_duration)
+        max_ideal_batch_size = int(
+            self.MAX_IDEAL_BATCH_DURATION / batch_duration)
         if (batch_duration > 0 and
-                batch_duration < self.MIN_IDEAL_BATCH_DURATION):
+                self._effective_batch_size < min_ideal_batch_size):
             # The current batch size is too small: the duration of the
             # processing of a batch of task is not large enough to hide
             # the scheduling overhead.
-            ideal_batch_size = int(
-                self.MIN_IDEAL_BATCH_DURATION / batch_duration)
             # Multiply by two to limit oscilations between min and max.
-            ideal_batch_size *= 2
+            ideal_batch_size = 2 * min_ideal_batch_size
 
             # dont increase the batch size too fast to limit huge batch sizes
             # potentially leading to starving worker
@@ -283,7 +287,7 @@ class AutoBatchingMixin(object):
                 self.parallel._print(
                     "Batch computation too fast (%.4fs.) "
                     "Setting batch_size=%d.", (batch_duration, batch_size))
-        elif (batch_duration > self.MAX_IDEAL_BATCH_DURATION and
+        elif (self._effective_batch_size > max_ideal_batch_size and
               old_batch_size >= 2):
             # The current batch size is too big. If we schedule overly long
             # running batches some CPUs might wait with nothing left to do
@@ -292,9 +296,7 @@ class AutoBatchingMixin(object):
             # likelihood of scheduling such stragglers.
 
             # decrease the batch size quickly to limit potential starving
-            ideal_batch_size = int(
-                self.MIN_IDEAL_BATCH_DURATION / batch_duration
-            )
+            ideal_batch_size = min_ideal_batch_size
             # Multiply by two to limit oscilations between min and max.
             batch_size = max(2 * ideal_batch_size, 1)
             self._effective_batch_size = batch_size
