@@ -765,7 +765,24 @@ class Parallel(Logger):
             batch_size = self.batch_size
 
         with self._lock:
-            tasks = BatchedCalls(itertools.islice(iterator, batch_size),
+            islice = list(itertools.islice(iterator, batch_size))
+            if len(islice) < batch_size:
+                # itertools.islice returned less items than what we asked, it
+                # means we reached the end of the iterator. To limit the risk
+                # of starving workers, dispatch the last tasks evenly in n_jobs
+                # batches.
+                final_batch_size = max(1, len(islice) // self.n_jobs)
+                i = 0
+                while i < len(islice):
+                    tasks = BatchedCalls(islice[i:i + final_batch_size],
+                                         self._backend.get_nested_backend(),
+                                         self._pickle_cache)
+                    tasks._previous_smoothed_batch_duration = smoothed_duration
+                    self._dispatch(tasks)
+                    i += final_batch_size
+                return False
+
+            tasks = BatchedCalls(islice,
                                  self._backend.get_nested_backend(),
                                  self._pickle_cache)
             tasks._previous_smoothed_batch_duration = smoothed_duration
