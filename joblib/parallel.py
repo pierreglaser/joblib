@@ -772,34 +772,24 @@ class Parallel(Logger):
 
         with self._lock:
             BIG_BATCH_SIZE = batch_size * self.n_jobs
+            # slice the iterator n_jobs * batchsize items at a time. If the
+            # slice returns less than that, then the current batchsize puts too
+            # much weight on a subset of workers, while other may end up
+            # starving. So in this case, re-scale the batch size accordingly to
+            # distribute evenly the last items between all workers.
             islice = list(itertools.islice(iterator, BIG_BATCH_SIZE))
-            if len(islice) < BIG_BATCH_SIZE + 1:  # always true
-                # itertools.islice returned less items than what we asked, it
-                # means we reached the end of the iterator. To limit the risk
-                # of starving workers, dispatch the last tasks evenly in n_jobs
-                # batches.
-                is_last_batch = len(islice) < BIG_BATCH_SIZE
-                final_batch_size = max(1, len(islice) // self.n_jobs)
-                i = 0
-                while i < len(islice):
-                    tasks = BatchedCalls(islice[i:i + final_batch_size],
-                                         self._backend.get_nested_backend(),
-                                         self._pickle_cache)
-                    tasks._previous_smoothed_batch_duration = smoothed_duration
-                    self._dispatch(tasks)
-                    i += final_batch_size
-                return not is_last_batch
 
-            tasks = BatchedCalls(islice,
-                                 self._backend.get_nested_backend(),
-                                 self._pickle_cache)
-            tasks._previous_smoothed_batch_duration = smoothed_duration
-            if len(tasks) == 0:
-                # No more tasks available in the iterator: tell caller to stop.
-                return False
-            else:
+            is_last_batch = len(islice) < BIG_BATCH_SIZE
+            final_batch_size = max(1, len(islice) // self.n_jobs)
+            i = 0
+            while i < len(islice):
+                tasks = BatchedCalls(islice[i:i + final_batch_size],
+                                     self._backend.get_nested_backend(),
+                                     self._pickle_cache)
+                tasks._previous_smoothed_batch_duration = smoothed_duration
                 self._dispatch(tasks)
-                return True
+                i += final_batch_size
+            return not is_last_batch
 
     def _print(self, msg, msg_args):
         """Display the message on stout or stderr depending on verbosity"""
