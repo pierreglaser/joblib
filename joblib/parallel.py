@@ -305,7 +305,6 @@ class BatchCompletionCallBack(object):
         self.idx = idx
 
     def __call__(self, out):
-        print('calling callback for batch {}'.format(self.idx))
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_end_to_end_duration = time.time() - self.dispatch_timestamp
         time_spent_in_worker = out._result[1]
@@ -317,7 +316,6 @@ class BatchCompletionCallBack(object):
         self.parallel.print_progress()
         with self.parallel._lock:
             if self.parallel._original_iterator is not None:
-                print('trying to dispatch from the callback')
                 self.parallel.dispatch_next()
 
 
@@ -745,12 +743,10 @@ class Parallel(Logger):
 
         """
         if self._backend._workers._queue_empty_event.is_set():
-            print('event was set!')
             self._backend._workers._queue_empty_event.clear()
             if not self.dispatch_one_batch(self._original_iterator):
                 self._iterating = False
                 self._original_iterator = None
-        print('event was not set :(')
 
     def dispatch_one_batch(self, iterator):
         """Prefetch the tasks for the next batch and dispatch them.

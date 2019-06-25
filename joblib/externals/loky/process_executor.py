@@ -489,10 +489,8 @@ def _add_call_item_to_queue(pending_work_items,
             return
         try:
             work_id = work_ids.get(block=False)
-            print('trying to get a job')
             queue_empty_event.set()
         except queue.Empty:
-            print('queue empty, no job :(')
             queue_empty_event.set()
             return
         else:
