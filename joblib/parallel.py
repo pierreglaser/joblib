@@ -305,6 +305,7 @@ class BatchCompletionCallBack(object):
         self.idx = idx
 
     def __call__(self, out):
+        print('calling callback for batch {}'.format(self.idx))
         self.parallel.n_completed_tasks += self.batch_size
         this_batch_end_to_end_duration = time.time() - self.dispatch_timestamp
         time_spent_in_worker = out._result[1]
@@ -316,6 +317,7 @@ class BatchCompletionCallBack(object):
         self.parallel.print_progress()
         with self.parallel._lock:
             if self.parallel._original_iterator is not None:
+                print('trying to dispatch from the callback')
                 self.parallel.dispatch_next()
 
 
@@ -742,9 +744,13 @@ class Parallel(Logger):
         against concurrent consumption of the unprotected iterator.
 
         """
-        if not self.dispatch_one_batch(self._original_iterator):
-            self._iterating = False
-            self._original_iterator = None
+        if self._backend._workers._queue_empty_event.is_set():
+            print('event was set!')
+            self._backend._workers._queue_empty_event.clear()
+            if not self.dispatch_one_batch(self._original_iterator):
+                self._iterating = False
+                self._original_iterator = None
+        print('event was not set :(')
 
     def dispatch_one_batch(self, iterator):
         """Prefetch the tasks for the next batch and dispatch them.
@@ -765,12 +771,14 @@ class Parallel(Logger):
             batch_size = self.batch_size
 
         with self._lock:
-            islice = list(itertools.islice(iterator, batch_size))
-            if len(islice) < batch_size:
+            BIG_BATCH_SIZE = batch_size * self.n_jobs
+            islice = list(itertools.islice(iterator, BIG_BATCH_SIZE))
+            if len(islice) < BIG_BATCH_SIZE + 1:  # always true
                 # itertools.islice returned less items than what we asked, it
                 # means we reached the end of the iterator. To limit the risk
                 # of starving workers, dispatch the last tasks evenly in n_jobs
                 # batches.
+                is_last_batch = len(islice) < BIG_BATCH_SIZE
                 final_batch_size = max(1, len(islice) // self.n_jobs)
                 i = 0
                 while i < len(islice):
@@ -780,7 +788,7 @@ class Parallel(Logger):
                     tasks._previous_smoothed_batch_duration = smoothed_duration
                     self._dispatch(tasks)
                     i += final_batch_size
-                return False
+                return not is_last_batch
 
             tasks = BatchedCalls(islice,
                                  self._backend.get_nested_backend(),
@@ -932,7 +940,10 @@ class Parallel(Logger):
             # The main thread will consume the first pre_dispatch items and
             # the remaining items will later be lazily dispatched by async
             # callbacks upon task completions.
-            iterator = itertools.islice(iterator, pre_dispatch)
+
+            # On this version, there automatic pre-dispatching of n_jobs tasks
+            # is done -- the pre_dispatch functionality is not used
+            # iterator = itertools.islice(iterator, pre_dispatch)
 
         self._start_time = time.time()
         self.n_dispatched_batches = 0
