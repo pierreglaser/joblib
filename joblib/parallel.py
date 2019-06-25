@@ -927,9 +927,8 @@ class Parallel(Logger):
             # the remaining items will later be lazily dispatched by async
             # callbacks upon task completions.
 
-            # On this version, there automatic pre-dispatching of n_jobs tasks
-            # is done -- the pre_dispatch functionality is not used
-            # iterator = itertools.islice(iterator, pre_dispatch)
+            # TODO: this iterator should be batch_size * n_jobs
+            iterator = itertools.islice(iterator, n_jobs)
 
         self._start_time = time.time()
         self.n_dispatched_batches = 0
