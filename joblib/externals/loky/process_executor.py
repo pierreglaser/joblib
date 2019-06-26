@@ -68,7 +68,7 @@ import warnings
 import itertools
 import traceback
 import threading
-from time import time, sleep
+from time import time
 import multiprocessing as mp
 from functools import partial
 from pickle import PicklingError
@@ -468,8 +468,7 @@ def _process_worker(call_queue, result_queue, initializer, initargs,
 def _add_call_item_to_queue(pending_work_items,
                             running_work_items,
                             work_ids,
-                            call_queue,
-                            queue_empty_event):
+                            call_queue):
     """Fills call_queue with _WorkItems from pending_work_items.
 
     This function never blocks.
@@ -490,7 +489,6 @@ def _add_call_item_to_queue(pending_work_items,
         try:
             work_id = work_ids.get(block=False)
         except queue.Empty:
-            queue_empty_event.set()
             return
         else:
             work_item = pending_work_items[work_id]
@@ -516,8 +514,7 @@ def _queue_management_worker(executor_reference,
                              call_queue,
                              result_queue,
                              thread_wakeup,
-                             processes_management_lock,
-                             queue_empty_event):
+                             processes_management_lock):
     """Manages the communication between this process and the worker processes.
 
     This function is run in a local thread.
@@ -608,8 +605,7 @@ def _queue_management_worker(executor_reference,
         _add_call_item_to_queue(pending_work_items,
                                 running_work_items,
                                 work_ids_queue,
-                                call_queue,
-                                queue_empty_event)
+                                call_queue)
         # Wait for a result to be ready in the result_queue while checking
         # that all worker processes are still running, or for a wake up
         # signal send. The wake up signals come either from new tasks being
@@ -929,9 +925,6 @@ class ProcessPoolExecutor(_base.Executor):
         # Finally setup the queues for interprocess communication
         self._setup_queues(job_reducers, result_reducers)
 
-        # event notifying empty work queue.
-        self._queue_empty_event = threading.Event()
-
         mp.util.debug('ProcessPoolExecutor is setup')
 
     def _setup_queues(self, job_reducers, result_reducers, queue_size=None):
@@ -978,8 +971,7 @@ class ProcessPoolExecutor(_base.Executor):
                       self._call_queue,
                       self._result_queue,
                       self._queue_management_thread_wakeup,
-                      self._processes_management_lock,
-                      self._queue_empty_event),
+                      self._processes_management_lock),
                 name="QueueManagerThread")
             self._queue_management_thread.daemon = True
             self._queue_management_thread.start()

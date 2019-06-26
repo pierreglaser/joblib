@@ -18,6 +18,7 @@ import itertools
 from numbers import Integral
 import warnings
 from functools import partial
+import queue
 
 from ._multiprocessing_helpers import mp
 
@@ -609,6 +610,7 @@ class Parallel(Logger):
         self.verbose = verbose
         self.timeout = timeout
         self.pre_dispatch = pre_dispatch
+        self._ready_batches = queue.Queue()
 
         if isinstance(max_nbytes, _basestring):
             max_nbytes = memstr_to_bytes(max_nbytes)
@@ -742,11 +744,9 @@ class Parallel(Logger):
         against concurrent consumption of the unprotected iterator.
 
         """
-        if self._backend._workers._queue_empty_event.is_set():
-            self._backend._workers._queue_empty_event.clear()
-            if not self.dispatch_one_batch(self._original_iterator):
-                self._iterating = False
-                self._original_iterator = None
+        if not self.dispatch_one_batch(self._original_iterator):
+            self._iterating = False
+            self._original_iterator = None
 
     def dispatch_one_batch(self, iterator):
         """Prefetch the tasks for the next batch and dispatch them.
@@ -767,25 +767,45 @@ class Parallel(Logger):
             batch_size = self.batch_size
 
         with self._lock:
-            BIG_BATCH_SIZE = batch_size * self.n_jobs
-            # slice the iterator n_jobs * batchsize items at a time. If the
-            # slice returns less than that, then the current batchsize puts too
-            # much weight on a subset of workers, while other may end up
-            # starving. So in this case, re-scale the batch size accordingly to
-            # distribute evenly the last items between all workers.
-            islice = list(itertools.islice(iterator, BIG_BATCH_SIZE))
+            # to ensure an even distribution of the workolad between workers,
+            # we look ahead in the original iterators more than batch_size
+            # tasks - However, we keep consuming only one batch at each
+            # dispatch_one_batch call. The extra tasks are stored in a local
+            # queue, _ready_batches, that is looked-up prior to re-consuming
+            # tasks from the origal iterator.
+            try:
+                tasks = self._ready_batches.get(block=False)
+            except queue.Empty:
+                # slice the iterator n_jobs * batchsize items at a time. If the
+                # slice returns less than that, then the current batchsize puts
+                # too much weight on a subset of workers, while other may end
+                # up starving. So in this case, re-scale the batch size
+                # accordingly to distribute evenly the last items between all
+                # workers.
+                BIG_BATCH_SIZE = batch_size * self.n_jobs
 
-            is_last_batch = len(islice) < BIG_BATCH_SIZE
-            final_batch_size = max(1, len(islice) // self.n_jobs)
-            i = 0
-            while i < len(islice):
-                tasks = BatchedCalls(islice[i:i + final_batch_size],
-                                     self._backend.get_nested_backend(),
-                                     self._pickle_cache)
-                tasks._previous_smoothed_batch_duration = smoothed_duration
+                islice = list(itertools.islice(iterator, BIG_BATCH_SIZE))
+                if len(islice) == 0:
+                    return False
+
+                final_batch_size = max(1, len(islice) // self.n_jobs)
+                i = 0
+                # enqueue n_jobs batches in a local queue
+                while i < len(islice):
+                    tasks = BatchedCalls(islice[i:i + final_batch_size],
+                                         self._backend.get_nested_backend(),
+                                         self._pickle_cache)
+                    tasks._previous_smoothed_batch_duration = smoothed_duration
+                    self._ready_batches.put(tasks)
+                    i += final_batch_size
+
+                # finally, get one task.
+                tasks = self._ready_batches.get(block=False)
+            if len(tasks) == 0:
+                return False
+            else:
                 self._dispatch(tasks)
-                i += final_batch_size
-            return not is_last_batch
+                return True
 
     def _print(self, msg, msg_args):
         """Display the message on stout or stderr depending on verbosity"""
