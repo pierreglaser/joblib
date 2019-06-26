@@ -489,7 +489,6 @@ def _add_call_item_to_queue(pending_work_items,
             return
         try:
             work_id = work_ids.get(block=False)
-            queue_empty_event.set()
         except queue.Empty:
             queue_empty_event.set()
             return
