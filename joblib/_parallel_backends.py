@@ -331,12 +331,12 @@ class AutoBatchingMixin(object):
             if old_duration == self._DEFAULT_SMOOTHED_BATCH_DURATION:
                 # First record of duration for this batch size after the last
                 # reset.
-                new_duration = worker_duration
+                new_duration = duration
             else:
                 # Update the exponentially weighted average of the duration of
                 # batch for the current effective size.
                 new_duration = self.eta * old_duration + (
-                    1 - self.eta) * worker_duration
+                    1 - self.eta) * duration
             self._smoothed_batch_duration = new_duration
         else:
             used_for_batch_size_estimation = False
