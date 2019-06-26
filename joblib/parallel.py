@@ -787,8 +787,14 @@ class Parallel(Logger):
                 islice = list(itertools.islice(iterator, BIG_BATCH_SIZE))
                 if len(islice) == 0:
                     return False
-
-                final_batch_size = max(1, len(islice) // self.n_jobs)
+                elif len(islice) < BIG_BATCH_SIZE:
+                    # we reached the end of the iterator. In this case,
+                    # decrease the batch size to account for potential variance
+                    # in the batches running time.
+                    final_batch_size = max(
+                        1, len(islice) // (10 * self.n_jobs))
+                else:
+                    final_batch_size = max(1, len(islice) // self.n_jobs)
                 i = 0
                 # enqueue n_jobs batches in a local queue
                 while i < len(islice):
