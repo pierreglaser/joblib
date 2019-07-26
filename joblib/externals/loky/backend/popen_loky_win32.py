@@ -86,7 +86,7 @@ class Popen(_Popen):
                     # be used instead.
                     inherit = True
                     hp, ht, pid, tid = _winapi.CreateProcess(
-                        spawn.get_executable(), cmd,
+                        python_exe, cmd,
                         env, None, inherit, 0,
                         None, None, None)
                     _winapi.CloseHandle(ht)
