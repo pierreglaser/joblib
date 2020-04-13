@@ -1,9 +1,9 @@
 from __future__ import print_function, division, absolute_import
 
-import asyncio
 import concurrent.futures
 import contextlib
 
+import time
 from uuid import uuid4
 import weakref
 
@@ -177,9 +177,9 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
         self._results = {}
         self._callbacks = {}
 
-    async def _collect(self):
+    def _collect(self):
         while self._continue:
-            async for future, result in self.waiting_futures:
+            for future, result in self.waiting_futures:
                 cf_future = self._results.pop(future)
                 if future.status == "error":
                     typ, exc, tb = result
@@ -187,7 +187,10 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
                 else:
                     cf_future.set_result(result)
                 self._callbacks.pop(future)(result)
-            await asyncio.sleep(0.01)
+            time.sleep(0.01)
+
+    async def collect_wrapper(self):
+        await self.client.loop.run_in_executor(None, self._collect)
 
     def __reduce__(self):
         return (DaskDistributedBackend, ())
@@ -200,7 +203,7 @@ class DaskDistributedBackend(ParallelBackendBase, AutoBatchingMixin):
 
     def start_call(self):
         self._continue = True
-        self.client.loop.add_callback(self._collect)
+        self.client.loop.add_callback(self.collect_wrapper)
         self.call_data_futures = _WeakKeyDictionary()
 
     def stop_call(self):
