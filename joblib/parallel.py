@@ -11,16 +11,18 @@ import os
 import sys
 from math import sqrt
 import functools
+import logging
 import time
 import threading
 import itertools
 from numbers import Integral
 import warnings
 import queue
+from uuid import uuid4
 
 from ._multiprocessing_helpers import mp
 
-from .logger import Logger, short_format_time
+from .logger import short_format_time, _get_child_logger
 from .disk import memstr_to_bytes
 from ._parallel_backends import (FallbackToBackend, MultiprocessingBackend,
                                  ThreadingBackend, SequentialBackend,
@@ -53,6 +55,7 @@ _backend = threading.local()
 VALID_BACKEND_HINTS = ('processes', 'threads', None)
 VALID_BACKEND_CONSTRAINTS = ('sharedmem', None)
 
+logger = logging.getLogger('joblib.parallel')
 
 def _register_dask():
     """ Register Dask Backend if called with parallel_backend("dask") """
@@ -97,10 +100,12 @@ def get_active_backend(prefer=None, require=None, verbose=0):
             sharedmem_backend = BACKENDS[DEFAULT_THREAD_BACKEND](
                 nesting_level=nesting_level)
             if verbose >= 10:
-                print("Using %s as joblib.Parallel backend instead of %s "
-                      "as the latter does not provide shared memory semantics."
-                      % (sharedmem_backend.__class__.__name__,
-                         backend.__class__.__name__))
+                logger.debug(
+                    "Using %s as joblib.Parallel backend instead of %s "
+                    "as the latter does not provide shared memory semantics."
+                    % (sharedmem_backend.__class__.__name__,
+                       backend.__class__.__name__)
+                )
             return sharedmem_backend, DEFAULT_N_JOBS
         else:
             return backend_and_jobs
@@ -386,7 +391,7 @@ def effective_n_jobs(n_jobs=-1):
 
 
 ###############################################################################
-class Parallel(Logger):
+class Parallel:
     ''' Helper class for readable parallel mapping.
 
         Read more in the :ref:`User Guide <parallel>`.
@@ -691,6 +696,10 @@ class Parallel(Logger):
         # the async callback thread of our the pool.
         self._lock = threading.RLock()
 
+        self._uuid = uuid4().hex
+        # avoid collisions between logger objects of Parallel instances.
+        self._logger = _get_child_logger(logger, self._uuid, verbose)
+
     def __enter__(self):
         self._managed_backend = True
         self._initialize_backend()
@@ -831,19 +840,6 @@ class Parallel(Logger):
                 self._dispatch(tasks)
                 return True
 
-    def _print(self, msg, msg_args):
-        """Display the message on stout or stderr depending on verbosity"""
-        # XXX: Not using the logger framework: need to
-        # learn to use logger better.
-        if not self.verbose:
-            return
-        if self.verbose < 50:
-            writer = sys.stderr.write
-        else:
-            writer = sys.stdout.write
-        msg = msg % msg_args
-        writer('[%s]: %s\n' % (self, msg))
-
     def print_progress(self):
         """Display the process of the parallel execution only a fraction
            of time, controlled by self.verbose.
@@ -860,9 +856,10 @@ class Parallel(Logger):
         if self._original_iterator is not None:
             if _verbosity_filter(self.n_dispatched_batches, self.verbose):
                 return
-            self._print('Done %3i tasks      | elapsed: %s',
-                        (self.n_completed_tasks,
-                         short_format_time(elapsed_time), ))
+            self._logger.info(
+                '[%s]:Done %3i tasks      | elapsed: %s',
+                self, self.n_completed_tasks, short_format_time(elapsed_time)
+            )
         else:
             index = self.n_completed_tasks
             # We are finished dispatching
@@ -880,12 +877,11 @@ class Parallel(Logger):
             remaining_time = (elapsed_time / index) * \
                              (self.n_dispatched_tasks - index * 1.0)
             # only display status if remaining time is greater or equal to 0
-            self._print('Done %3i out of %3i | elapsed: %s remaining: %s',
-                        (index,
-                         total_tasks,
-                         short_format_time(elapsed_time),
-                         short_format_time(remaining_time),
-                         ))
+            self._logger.info(
+                '[%s]: Done %3i out of %3i | elapsed: %s remaining: %s', self,
+                index, total_tasks, short_format_time(elapsed_time),
+                short_format_time(remaining_time)
+            )
 
     def retrieve(self):
         self._output = list()
@@ -947,8 +943,10 @@ class Parallel(Logger):
         if n_jobs == 0:
             raise RuntimeError("%s has no active worker." % backend_name)
 
-        self._print("Using backend %s with %d concurrent workers.",
-                    (backend_name, n_jobs))
+        self._logger.info(
+            "[%s]: Using backend %s with %d concurrent workers.", self,
+            backend_name, n_jobs
+        )
         if hasattr(self._backend, 'start_call'):
             self._backend.start_call()
         iterator = iter(iterable)
@@ -1005,9 +1003,11 @@ class Parallel(Logger):
                 self.retrieve()
             # Make sure that we get a last message telling us we are done
             elapsed_time = time.time() - self._start_time
-            self._print('Done %3i out of %3i | elapsed: %s finished',
-                        (len(self._output), len(self._output),
-                         short_format_time(elapsed_time)))
+            self._logger.info(
+                '[%s]: Done %3i out of %3i | elapsed: %s finished',
+                self, len(self._output), len(self._output),
+                short_format_time(elapsed_time)
+            )
         finally:
             if hasattr(self._backend, 'stop_call'):
                 self._backend.stop_call()

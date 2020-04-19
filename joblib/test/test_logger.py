@@ -16,7 +16,8 @@ from joblib.logger import PrintTime
 def test_print_time(tmpdir, capsys):
     # A simple smoke test for PrintTime.
     logfile = tmpdir.join('test.log').strpath
-    print_time = PrintTime(logfile=logfile)
+    with capsys.disabled():  # avoid FutureWarning
+        print_time = PrintTime(logfile=logfile)
     print_time('Foo')
     # Create a second time, to smoke test log rotation.
     print_time = PrintTime(logfile=logfile)

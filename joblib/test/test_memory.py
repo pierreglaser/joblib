@@ -15,6 +15,7 @@ import pickle
 import sys
 import time
 import datetime
+import logging
 
 import pytest
 
@@ -51,7 +52,7 @@ def check_identity_lazy(func, accumulator, location):
     """
     # Call each function with several arguments, and check that it is
     # evaluated only once per argument.
-    memory = Memory(location=location, verbose=0)
+    memory = Memory(location=location, verbose=1000)
     func = memory.cache(func)
     for i in range(3):
         for _ in range(2):
@@ -64,19 +65,6 @@ def corrupt_single_cache_item(memory):
     output_filename = os.path.join(single_cache_item.path, 'output.pkl')
     with open(output_filename, 'w') as f:
         f.write('garbage')
-
-
-def monkeypatch_cached_func_warn(func, monkeypatch_fixture):
-    # Need monkeypatch because pytest does not
-    # capture stdlib logging output (see
-    # https://github.com/pytest-dev/pytest/issues/2079)
-
-    recorded = []
-
-    def append_to_record(item):
-        recorded.append(item)
-    monkeypatch_fixture.setattr(func, 'warn', append_to_record)
-    return recorded
 
 
 ###############################################################################
@@ -308,7 +296,7 @@ def test_memory_numpy(tmpdir, mmap_mode):
 
 
 @with_numpy
-def test_memory_numpy_check_mmap_mode(tmpdir, monkeypatch):
+def test_memory_numpy_check_mmap_mode(tmpdir, monkeypatch, caplog):
     """Check that mmap_mode is respected even at the first call"""
 
     memory = Memory(location=tmpdir.strpath, mmap_mode='r', verbose=0)
@@ -337,11 +325,11 @@ def test_memory_numpy_check_mmap_mode(tmpdir, monkeypatch):
 
     # Make sure that corrupting the file causes recomputation and that
     # a warning is issued.
-    recorded_warnings = monkeypatch_cached_func_warn(twice, monkeypatch)
+    caplog.clear()
     d = twice(a)
-    assert len(recorded_warnings) == 1
+    assert len(caplog.records) == 1
     exception_msg = 'Exception while loading results'
-    assert exception_msg in recorded_warnings[0]
+    assert exception_msg in caplog.records[0].message
     # Asserts that the recomputation returns a mmap
     assert isinstance(d, np.memmap)
     assert d.mode == 'r'
@@ -890,7 +878,7 @@ def test_cached_function_race_condition_when_persisting_output_2(tmpdir,
 
 
 def test_memory_recomputes_after_an_error_while_loading_results(
-        tmpdir, monkeypatch):
+        tmpdir, monkeypatch, caplog):
     memory = Memory(location=tmpdir.strpath)
 
     def func(arg):
@@ -913,11 +901,14 @@ def test_memory_recomputes_after_an_error_while_loading_results(
 
     # Make sure that corrupting the file causes recomputation and that
     # a warning is issued.
-    recorded_warnings = monkeypatch_cached_func_warn(cached_func, monkeypatch)
+    caplog.clear()
     recomputed_arg, recomputed_timestamp = cached_func(arg)
-    assert len(recorded_warnings) == 1
+    warnings_and_errors = [
+        c for c in caplog.records if c.levelno >= logging.WARNING
+    ]
+    assert len(warnings_and_errors) == 1
     exception_msg = 'Exception while loading results'
-    assert exception_msg in recorded_warnings[0]
+    assert exception_msg in warnings_and_errors[0].message
     assert recomputed_arg == arg
     assert recomputed_timestamp > timestamp
 

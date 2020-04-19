@@ -50,3 +50,6 @@ doc/_build
 dask-worker-space/
 
 .vscode
+
+drafts/
+bench/

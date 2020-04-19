@@ -3,13 +3,16 @@ Backends for embarrassingly parallel code.
 """
 
 import gc
+import logging
 import os
 import warnings
 import threading
 import functools
 import contextlib
 from abc import ABCMeta, abstractmethod
+from uuid import uuid4
 
+from .logger import _get_child_logger
 from .my_exceptions import WorkerInterrupt
 from ._multiprocessing_helpers import mp
 if mp is not None:
@@ -23,6 +26,8 @@ if mp is not None:
     from .externals.loky._base import TimeoutError as LokyTimeoutError
     from .externals.loky import process_executor, cpu_count
 
+
+logger = logging.getLogger('joblib.batching')
 
 class ParallelBackendBase(metaclass=ABCMeta):
     """Helper abc which defines all methods a ParallelBackend must implement"""
@@ -302,10 +307,10 @@ class AutoBatchingMixin(object):
             batch_size = max(batch_size, 1)
 
             self._effective_batch_size = batch_size
-            if self.parallel.verbose >= 10:
-                self.parallel._print(
-                    "Batch computation too fast (%.4fs.) "
-                    "Setting batch_size=%d.", (batch_duration, batch_size))
+            self._logger.debug(
+                "Batch computation too fast (%.4fs.) Setting batch_size=%d.",
+                batch_duration, batch_size
+            )
         elif (batch_duration > self.MAX_IDEAL_BATCH_DURATION and
               old_batch_size >= 2):
             # The current batch size is too big. If we schedule overly long
@@ -321,10 +326,10 @@ class AutoBatchingMixin(object):
             # Multiply by two to limit oscilations between min and max.
             batch_size = max(2 * ideal_batch_size, 1)
             self._effective_batch_size = batch_size
-            if self.parallel.verbose >= 10:
-                self.parallel._print(
-                    "Batch computation too slow (%.4fs.) "
-                    "Setting batch_size=%d.", (batch_duration, batch_size))
+            self._logger.debug(
+                "Batch computation too slow (%.4fs.) Setting batch_size=%d.",
+                batch_duration, batch_size
+            )
         else:
             # No batch size adjustment
             batch_size = old_batch_size
@@ -483,6 +488,10 @@ class MultiprocessingBackend(PoolManagerMixin, AutoBatchingMixin,
         gc.collect()
         self._pool = MemmappingPool(n_jobs, **memmappingpool_args)
         self.parallel = parallel
+        self._uuid = uuid4().hex
+        self._logger = _get_child_logger(
+            logger, self._uuid, memmappingpool_args.get('verbose', 0)
+        )
         return n_jobs
 
     def terminate(self):
@@ -513,6 +522,10 @@ class LokyBackend(AutoBatchingMixin, ParallelBackendBase):
             env=self._prepare_worker_env(n_jobs=n_jobs),
             **memmappingexecutor_args)
         self.parallel = parallel
+        self._uuid = uuid4().hex
+        self._logger = _get_child_logger(
+            logger, self._uuid, memmappingexecutor_args.get('verbose', 0)
+        )
         return n_jobs
 
     def effective_n_jobs(self, n_jobs):

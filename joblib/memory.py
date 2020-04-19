@@ -10,6 +10,7 @@ is called with the same input arguments.
 
 
 from __future__ import with_statement
+import logging
 import os
 import time
 import pathlib
@@ -27,12 +28,11 @@ from tokenize import open as open_py_source
 # Local imports
 from . import hashing
 from .func_inspect import get_func_code, get_func_name, filter_args
-from .func_inspect import format_call
 from .func_inspect import format_signature
-from .logger import Logger, format_time, pformat
+from .logger import format_time, pformat, _get_child_logger
 from ._store_backends import StoreBackendBase, FileSystemStoreBackend
 
-
+logger = logging.getLogger(__name__)
 
 FIRST_LINE_TEXT = "# first line:"
 
@@ -189,7 +189,7 @@ _FUNCTION_HASHES = weakref.WeakKeyDictionary()
 ###############################################################################
 # class `MemorizedResult`
 ###############################################################################
-class MemorizedResult(Logger):
+class MemorizedResult:
     """Object representing a cached value.
 
     Attributes
@@ -218,7 +218,6 @@ class MemorizedResult(Logger):
     """
     def __init__(self, location, func, args_id, backend='local',
                  mmap_mode=None, verbose=0, timestamp=None, metadata=None):
-        Logger.__init__(self)
         self.func_id = _build_func_identifier(func)
         if isinstance(func, str):
             self.func = func
@@ -238,6 +237,10 @@ class MemorizedResult(Logger):
         self.duration = self.metadata.get('duration', None)
         self.verbose = verbose
         self.timestamp = timestamp
+        self._location = location.location
+
+        _base_logger = logger.getChild(self._location or '')
+        self._logger = _get_child_logger(_base_logger, 'Result', verbose)
 
     def get(self):
         """Read value from cache and return it."""
@@ -277,7 +280,14 @@ class MemorizedResult(Logger):
     def __getstate__(self):
         state = self.__dict__.copy()
         state['timestamp'] = None
+        # Logger objects not pickleable in Python <= 3.6
+        del state['_logger']
         return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        _base_logger = logger.getChild(self._location or '')
+        self._logger = _get_child_logger(_base_logger, 'Result', self.verbose)
 
 
 class NotMemorizedResult(object):
@@ -353,7 +363,7 @@ class NotMemorizedFunc(object):
 ###############################################################################
 # class `MemorizedFunc`
 ###############################################################################
-class MemorizedFunc(Logger):
+class MemorizedFunc:
     """Callable object decorating a function for caching its return value
     each time it is called.
 
@@ -397,7 +407,6 @@ class MemorizedFunc(Logger):
 
     def __init__(self, func, location, backend='local', ignore=None,
                  mmap_mode=None, compress=False, verbose=1, timestamp=None):
-        Logger.__init__(self)
         self.mmap_mode = mmap_mode
         self.compress = compress
         self.func = func
@@ -436,6 +445,9 @@ class MemorizedFunc(Logger):
             # Pydoc does a poor job on other objects
             doc = func.__doc__
         self.__doc__ = 'Memoized version of %s' % doc
+        self._location = location
+        _base_logger = logger.getChild(self._location or '')
+        self._logger = _get_child_logger(_base_logger, 'Func', verbose)
 
     def _cached_call(self, args, kwargs, shelving=False):
         """Call wrapped function and cache result, or read cache if available.
@@ -477,21 +489,19 @@ class MemorizedFunc(Logger):
         # function code has changed
         if not (self._check_previous_func_code(stacklevel=4) and
                 self.store_backend.contains_item([func_id, args_id])):
-            if self._verbose > 10:
-                _, name = get_func_name(self.func)
-                self.warn('Computing func {0}, argument hash {1} '
-                          'in location {2}'
-                          .format(name, args_id,
-                                  self.store_backend.
-                                  get_cached_func_info([func_id])['location']))
+            _, name = get_func_name(self.func)
+            self._logger.debug(
+                'Computing func {0}, argument hash {1} in location {2}'.format(
+                    name, args_id, self.store_backend.get_cached_func_info(
+                        [func_id])['location'])
+            )
             must_call = True
         else:
             try:
                 t0 = time.time()
-                if self._verbose:
-                    msg = _format_load_msg(func_id, args_id,
-                                           timestamp=self.timestamp,
-                                           metadata=metadata)
+                msg = _format_load_msg(func_id, args_id,
+                                       timestamp=self.timestamp,
+                                       metadata=metadata)
 
                 if not shelving:
                     # When shelving, we do not need to load the output
@@ -502,16 +512,15 @@ class MemorizedFunc(Logger):
                 else:
                     out = None
 
-                if self._verbose > 4:
-                    t = time.time() - t0
-                    _, name = get_func_name(self.func)
-                    msg = '%s cache loaded - %s' % (name, format_time(t))
-                    print(max(0, (80 - len(msg))) * '_' + msg)
+                t = time.time() - t0
+                _, name = get_func_name(self.func)
+                self._logger.debug('%s cache loaded - %s', name, format_time(t))
             except Exception:
-                # XXX: Should use an exception logger
                 _, signature = format_signature(self.func, *args, **kwargs)
-                self.warn('Exception while loading results for '
-                          '{}\n {}'.format(signature, traceback.format_exc()))
+                self._logger.error(
+                    'Exception while loading results for %s \n %s',
+                    signature, traceback.format_exc()
+                )
 
                 must_call = True
 
@@ -546,7 +555,8 @@ class MemorizedFunc(Logger):
         """
         _, args_id, metadata = self._cached_call(args, kwargs, shelving=True)
         return MemorizedResult(self.store_backend, self.func, args_id,
-                               metadata=metadata, verbose=self._verbose - 1,
+                               metadata=metadata,
+                               verbose=max(0, self._verbose - 1),
                                timestamp=self.timestamp)
 
     def __call__(self, *args, **kwargs):
@@ -558,7 +568,15 @@ class MemorizedFunc(Logger):
         """
         state = self.__dict__.copy()
         state['timestamp'] = None
+
+        # logger objects are unpickleable in Python < 3.6
+        del state['_logger']
         return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        _base_logger = logger.getChild(self._location or '')
+        self._logger = _get_child_logger(_base_logger, "Func", self._verbose)
 
     # ------------------------------------------------------------------------
     # Private interface
@@ -685,11 +703,11 @@ class MemorizedFunc(Logger):
                     stacklevel=stacklevel)
 
         # The function has changed, wipe the cache directory.
-        # XXX: Should be using warnings, and giving stacklevel
-        if self._verbose > 10:
-            _, func_name = get_func_name(self.func, resolv_alias=False)
-            self.warn("Function {0} (identified by {1}) has changed"
-                      ".".format(func_name, func_id))
+        # XXX: Should be using warnings, and giving stacklevel?
+        _, func_name = get_func_name(self.func, resolv_alias=False)
+        self._logger.debug(
+            "Function %s (identified by %s) has changed.", func_name, func_id
+        )
         self.clear(warn=True)
         return False
 
@@ -697,8 +715,15 @@ class MemorizedFunc(Logger):
         """Empty the function's cache."""
         func_id = _build_func_identifier(self.func)
 
-        if self._verbose > 0 and warn:
-            self.warn("Clearing function cache identified by %s" % func_id)
+        # TODO: deprecate the warn argument?
+        if warn:
+            self._logger.warning(
+                "Clearing function cache identified by %s", func_id
+            )
+        else:
+            self._logger.debug(
+                "Clearing function cache identified by %s", func_id
+            )
         self.store_backend.clear_path([func_id, ])
 
         func_code, _, first_line = get_func_code(self.func)
@@ -710,8 +735,9 @@ class MemorizedFunc(Logger):
         """
         start_time = time.time()
         func_id, args_id = self._get_output_identifiers(*args, **kwargs)
-        if self._verbose > 0:
-            print(format_call(self.func, args, kwargs))
+        self._logger.info(
+            'Calling %s...%s', *format_signature(self.func, *args, **kwargs)
+        )
         output = self.func(*args, **kwargs)
         self.store_backend.dump_item(
             [func_id, args_id], output, verbose=self._verbose)
@@ -719,10 +745,8 @@ class MemorizedFunc(Logger):
         duration = time.time() - start_time
         metadata = self._persist_input(duration, args, kwargs)
 
-        if self._verbose > 0:
-            _, name = get_func_name(self.func)
-            msg = '%s - %s' % (name, format_time(duration))
-            print(max(0, (80 - len(msg))) * '_' + msg)
+        _, name = get_func_name(self.func)
+        self._logger.info('%s - %s', name, format_time(duration))
         return output, metadata
 
     def _persist_input(self, duration, args, kwargs, this_duration_limit=0.5):
@@ -791,7 +815,7 @@ class MemorizedFunc(Logger):
 ###############################################################################
 # class `Memory`
 ###############################################################################
-class Memory(Logger):
+class Memory:
     """ A context object for caching a function's return value each time it
         is called with the same input arguments.
 
@@ -850,7 +874,6 @@ class Memory(Logger):
                  mmap_mode=None, compress=False, verbose=1, bytes_limit=None,
                  backend_options=None):
         # XXX: Bad explanation of the None value of cachedir
-        Logger.__init__(self)
         self._verbose = verbose
         self.mmap_mode = mmap_mode
         self.timestamp = time.time()
@@ -889,6 +912,12 @@ class Memory(Logger):
             backend, location, verbose=self._verbose,
             backend_options=dict(compress=compress, mmap_mode=mmap_mode,
                                  **backend_options))
+
+        # create a passtrough-logger associated to cache directory
+        # (used across MemorizedFunc, MemorizedResult...)
+        _base_logger = _get_child_logger(logger, self.location or '', 100)
+        # create the child logger used by the Memory instance
+        self._logger = _get_child_logger(_base_logger, "Memory", verbose)
 
     @property
     def cachedir(self):
@@ -940,7 +969,7 @@ class Memory(Logger):
             mmap_mode = self.mmap_mode
         if isinstance(func, MemorizedFunc):
             func = func.func
-        return MemorizedFunc(func, location=self.store_backend,
+        return MemorizedFunc(func, location=self.store_backend.location,
                              backend=self.backend,
                              ignore=ignore, mmap_mode=mmap_mode,
                              compress=self.compress,
@@ -949,8 +978,12 @@ class Memory(Logger):
     def clear(self, warn=True):
         """ Erase the complete cache directory.
         """
+        # TODO: deprecate the warn argument?
         if warn:
-            self.warn('Flushing completely the cache')
+            self._logger.warning('Flushing completely the cache')
+        else:
+            self._logger.debug('Flushing completely the cache')
+
         if self.store_backend is not None:
             self.store_backend.clear()
 
@@ -988,4 +1021,12 @@ class Memory(Logger):
         """
         state = self.__dict__.copy()
         state['timestamp'] = None
+
+        # Logger objects not pickleable in Python <= 3.6
+        del state['_logger']
         return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        _base_logger = _get_child_logger(logger, self.location or '', 100)
+        self._logger = _get_child_logger(_base_logger, "Memory", self._verbose)
