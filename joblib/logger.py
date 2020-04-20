@@ -16,8 +16,49 @@ import os
 import shutil
 import logging
 import pprint
+import warnings
 
 from .disk import mkdirp
+
+
+def _initialize_joblib_logger(name):
+    logger = logging.getLogger('joblib.{}'.format(name))
+    logger.setLevel(logging.NOTSET)
+    handler = logging.StreamHandler()
+    if name == "parallel":
+        fmt = "%(message)s"
+    else:
+        fmt = "{}:%(levelname)s:%(message)s".format(logger.name)
+    formatter = logging.Formatter(fmt)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
+
+def _initialize_joblib_loggers():
+    _root_joblib_logger = logging.getLogger('joblib')
+    _root_joblib_logger.addHandler(logging.NullHandler())
+    _root_joblib_logger.setLevel(logging.NOTSET)
+    _root_joblib_logger.propagate = False
+
+    for name in ("batching", "parallel", "reduction", "memory"):
+        _initialize_joblib_logger(name)
+
+
+def _get_child_logger(parent, name, verbose):
+    logger = parent.getChild(name)
+    if verbose < 0:
+        raise ValueError('verbose must be a positive number')
+    elif verbose == 0:
+        logger.setLevel(logging.WARNING)
+    elif 1 <= verbose < 10:
+        logger.setLevel(logging.INFO)
+    else:
+        logger.setLevel(logging.DEBUG)
+    return logger
+
+
+_initialize_joblib_loggers()
 
 
 def _squeeze_time(t):

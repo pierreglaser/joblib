@@ -7,6 +7,7 @@ Reducer using memory mapping for numpy arrays
 
 from mmap import mmap
 import errno
+import logging
 import os
 import stat
 import threading
@@ -15,6 +16,7 @@ import tempfile
 import warnings
 import weakref
 from uuid import uuid4
+from multiprocessing import util
 
 from pickle import whichmodule, loads, dumps, HIGHEST_PROTOCOL, PicklingError
 
@@ -33,6 +35,8 @@ from .numpy_pickle import load
 from .numpy_pickle import dump
 from .backports import make_memmap
 from .disk import delete_folder
+from .externals.loky.backend import resource_tracker
+from .logger import _get_child_logger
 
 # Some system have a ramdisk mounted by default, we can use it instead of /tmp
 # as the default folder to dump big arrays to share with subprocesses.
@@ -47,6 +51,31 @@ SYSTEM_SHARED_MEM_FS_MIN_SIZE = int(2e9)
 # temporary files and folder.
 FOLDER_PERMISSIONS = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR
 FILE_PERMISSIONS = stat.S_IRUSR | stat.S_IWUSR
+
+# Set used in joblib workers, referencing the filenames of temporary memmaps
+# created by joblib to speed up data communication. In child processes, we add
+# a finalizer to these memmaps that sends a maybe_unlink call to the
+# resource_tracker, in order to free main memory as fast as possible.
+JOBLIB_MMAPS = set()
+
+logger = logging.getLogger('joblib.reduction')
+
+
+def _log_and_unlink(filename):
+    from .externals.loky.backend.resource_tracker import _resource_tracker
+    util.debug(
+        "[FINALIZER CALL] object mapping to {} about to be deleted,"
+        " decrementing the refcount of the file (pid: {})".format(
+            os.path.basename(filename), os.getpid()))
+    _resource_tracker.maybe_unlink(filename, "file")
+
+
+def add_maybe_unlink_finalizer(memmap):
+    util.debug(
+        "[FINALIZER ADD] adding finalizer to {} (id {}, filename {}, pid  {})"
+        "".format(type(memmap), id(memmap), os.path.basename(memmap.filename),
+                  os.getpid()))
+    weakref.finalize(memmap, _log_and_unlink, memmap.filename)
 
 
 class _WeakArrayKeyMap:
@@ -275,6 +304,10 @@ class ArrayMemmapReducer(object):
         self.verbose = int(verbose)
         self._prewarm = prewarm
         self._memmaped_arrays = _WeakArrayKeyMap()
+        self._temporary_memmaped_filenames = set()
+        self._unlink_on_gc_collect = unlink_on_gc_collect
+        self._uuid = uuid4().hex
+        self._logger = _get_child_logger(logger, self._uuid, verbose)
 
     def __reduce__(self):
         # The ArrayMemmapReducer is passed to the children processes: it needs
@@ -324,9 +357,9 @@ class ArrayMemmapReducer(object):
             # possible to delete temporary files as soon as the workers are
             # done processing this data.
             if not os.path.exists(filename):
-                if self.verbose > 0:
-                    print("Memmapping (shape={}, dtype={}) to new file {}"
-                          .format(a.shape, a.dtype, filename))
+                self._logger.info(
+                    "Memmapping (shape={}, dtype={}) to new file {}".format(
+                        a.shape, a.dtype, filename))
                 for dumped_filename in dump(a, filename):
                     os.chmod(dumped_filename, FILE_PERMISSIONS)
 
@@ -337,18 +370,19 @@ class ArrayMemmapReducer(object):
                     # concurrent memmap creation in multiple children
                     # processes.
                     load(filename, mmap_mode=self._mmap_mode).max()
-            elif self.verbose > 1:
-                print("Memmapping (shape={}, dtype={}) to old file {}"
-                      .format(a.shape, a.dtype, filename))
+            else:
+                self._logger.debug(
+                    "Memmapping (shape={}, dtype={}) to old file {}".format(
+                        a.shape, a.dtype, filename))
 
             # The worker process will use joblib.load to memmap the data
             return (load, (filename, self._mmap_mode))
         else:
             # do not convert a into memmap, let pickler do its usual copy with
             # the default system pickler
-            if self.verbose > 1:
-                print("Pickling array (shape={}, dtype={})."
-                      .format(a.shape, a.dtype))
+            self._logger.debug(
+                "Pickling array (shape={}, dtype={}).".format(
+                    a.shape, a.dtype))
             return (loads, (dumps(a, protocol=HIGHEST_PROTOCOL),))
 
 

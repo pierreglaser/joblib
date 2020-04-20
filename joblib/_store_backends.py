@@ -1,5 +1,6 @@
 """Storage providers backends for Memory caching."""
 
+import logging
 import re
 import os
 import os.path
@@ -14,10 +15,13 @@ from abc import ABCMeta, abstractmethod
 
 from .backports import concurrency_safe_rename
 from .disk import mkdirp, memstr_to_bytes, rm_subdirs
+from .logger import _get_child_logger
 from . import numpy_pickle
 
 CacheItemInfo = collections.namedtuple('CacheItemInfo',
                                        'path size last_access')
+
+logger = logging.getLogger('joblib.memory')
 
 
 def concurrency_safe_write(object_to_write, filename, write_func):
@@ -35,6 +39,21 @@ class StoreBackendBase(metaclass=ABCMeta):
        a StorageBackend must implement."""
 
     location = None
+
+    def get_logger(self, verbose):
+        # _logger is a new attribute added in joblib 0.14. Make sure that
+        # third-party subclasses of a StoreBackendBase that did not implement
+        # it in the past are still given a default logger.
+
+        # XXX: maybe this can be done in the __init__? Since we did not define
+        # one before, I don't know if now defining one would be considered an
+        # implementation detail or a breaking change...
+        if hasattr(self, "_logger"):
+            return self._logger
+        else:
+            _base_logger = logger.getChild(self._location or '')
+            self._logger = _get_child_logger(_base_logger, 'Store', verbose)
+            return self._logger
 
     @abstractmethod
     def _open_item(self, f, mode):
@@ -133,6 +152,15 @@ class StoreBackendBase(metaclass=ABCMeta):
             Contains a dictionnary of named paremeters used to configure the
             store backend.
         """
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        # Logger objects not pickleable in Python <= 3.6
+        d.pop('_logger', None)
+        return d
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._logger = self.get_logger(self.verbose)
 
 
 class StoreBackendMixin(object):
@@ -150,11 +178,10 @@ class StoreBackendMixin(object):
            strings."""
         full_path = os.path.join(self.location, *path)
 
-        if verbose > 1:
-            if verbose < 10:
-                print('{0}...'.format(msg))
-            else:
-                print('{0} from {1}'.format(msg, full_path))
+        if verbose < 10:
+            self.get_logger(verbose).debug('%s ...', msg)
+        else:
+            self.get_logger(verbose).debug('%s from %s', msg, full_path)
 
         mmap_mode = (None if not hasattr(self, 'mmap_mode')
                      else self.mmap_mode)
@@ -180,8 +207,7 @@ class StoreBackendMixin(object):
             if not self._item_exists(item_path):
                 self.create_location(item_path)
             filename = os.path.join(item_path, 'output.pkl')
-            if verbose > 10:
-                print('Persisting in %s' % item_path)
+            self.get_logger(verbose).debug('Persisting in %s' % item_path)
 
             def write_func(to_write, dest_filename):
                 with self._open_item(dest_filename, "wb") as f:
@@ -281,8 +307,7 @@ class StoreBackendMixin(object):
         items_to_delete = self._get_items_to_delete(bytes_limit)
 
         for item in items_to_delete:
-            if self.verbose > 10:
-                print('Deleting item {0}'.format(item))
+            self.get_logger(self.verbose).debug('Deleting item %s', item)
             try:
                 self.clear_location(item.path)
             except OSError:
@@ -412,3 +437,5 @@ class FileSystemStoreBackend(StoreBackendBase, StoreBackendMixin):
 
         self.mmap_mode = mmap_mode
         self.verbose = verbose
+        self._location = location
+        self._logger = self.get_logger(verbose)
