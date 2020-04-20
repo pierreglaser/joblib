@@ -71,6 +71,10 @@ class Logger(object):
             depth: int, optional
                 The depth of objects printed.
         """
+        warnings.warn(
+            "The Logger class is deprecated and will be removed in 0.16",
+            FutureWarning
+        )
         self.depth = depth
 
     def warn(self, msg):
@@ -93,6 +97,11 @@ class PrintTime(object):
     """
 
     def __init__(self, logfile=None, logdir=None):
+        warnings.warn(
+            "PrintTime is deprecated and will be removed in 0.16",
+            FutureWarning
+        )
+
         if logfile is not None and logdir is not None:
             raise ValueError('Cannot specify both logfile and logdir')
         # XXX: Need argument docstring

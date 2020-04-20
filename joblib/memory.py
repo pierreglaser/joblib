@@ -221,7 +221,9 @@ class MemorizedResult(Logger):
     """
     def __init__(self, location, func, args_id, backend='local',
                  mmap_mode=None, verbose=0, timestamp=None, metadata=None):
-        Logger.__init__(self)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=FutureWarning)
+            Logger.__init__(self)
         self.func_id = _build_func_identifier(func)
         if isinstance(func, str):
             self.func = func
@@ -409,7 +411,9 @@ class MemorizedFunc(Logger):
 
     def __init__(self, func, location, backend='local', ignore=None,
                  mmap_mode=None, compress=False, verbose=1, timestamp=None):
-        Logger.__init__(self)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=FutureWarning)
+            Logger.__init__(self)
         self.mmap_mode = mmap_mode
         self.compress = compress
         self.func = func
@@ -862,7 +866,9 @@ class Memory(Logger):
                  mmap_mode=None, compress=False, verbose=1, bytes_limit=None,
                  backend_options=None):
         # XXX: Bad explanation of the None value of cachedir
-        Logger.__init__(self)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=FutureWarning)
+            Logger.__init__(self)
         self._verbose = verbose
         self.mmap_mode = mmap_mode
         self.timestamp = time.time()
