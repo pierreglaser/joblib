@@ -69,67 +69,15 @@ class Hasher(Pickler):
         if return_digest:
             return self._hash.hexdigest()
 
-    def save(self, obj):
-        if isinstance(obj, (types.MethodType, type({}.pop))):
-            # the Pickler cannot pickle instance methods; here we decompose
-            # them into components that make them uniquely identifiable
-            if hasattr(obj, '__func__'):
-                func_name = obj.__func__.__name__
-            else:
-                func_name = obj.__name__
-            inst = obj.__self__
-            if type(inst) == type(pickle):
-                obj = _MyHash(func_name, inst.__name__)
-            elif inst is None:
-                # type(None) or type(module) do not pickle
-                obj = _MyHash(func_name, inst)
-            else:
-                cls = obj.__self__.__class__
-                obj = _MyHash(func_name, inst, cls)
-        Pickler.save(self, obj)
-
     def memoize(self, obj):
-        # We want hashing to be sensitive to value instead of reference.
-        # For example we want ['aa', 'aa'] and ['aa', 'aaZ'[:2]]
-        # to hash to the same value and that's why we disable memoization
-        # for strings
+        # strings and bytes objects, are immutable, but can have different id's
+        # even when being equal. Thus, we need to disable memoization (which
+        # relies on `id` checks)
         if isinstance(obj, (bytes, str)):
             return
         Pickler.memoize(self, obj)
 
-    # The dispatch table of the pickler is not accessible in Python
-    # 3, as these lines are only bugware for IPython, we skip them.
-    def save_global(self, obj, name=None, pack=struct.pack):
-        # We have to override this method in order to deal with objects
-        # defined interactively in IPython that are not injected in
-        # __main__
-        kwargs = dict(name=name, pack=pack)
-        del kwargs['pack']
-        try:
-            Pickler.save_global(self, obj, **kwargs)
-        except pickle.PicklingError:
-            Pickler.save_global(self, obj, **kwargs)
-            module = getattr(obj, "__module__", None)
-            if module == '__main__':
-                my_name = name
-                if my_name is None:
-                    my_name = obj.__name__
-                mod = sys.modules[module]
-                if not hasattr(mod, my_name):
-                    # IPython doesn't inject the variables define
-                    # interactively in __main__
-                    setattr(mod, my_name, obj)
-
     dispatch = Pickler.dispatch.copy()
-    # builtin
-    dispatch[type(len)] = save_global
-    # type
-    dispatch[type(object)] = save_global
-    # classobj
-    dispatch[type(Pickler)] = save_global
-    # function
-    dispatch[type(pickle.dump)] = save_global
-
     def _batch_setitems(self, items):
         # forces order of keys in dict to ensure consistent hash.
         try:
