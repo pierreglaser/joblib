@@ -137,23 +137,19 @@ def get_func_name(func, resolv_alias=True, win_characters=True):
                 filename = filename[:-3]
             module = module + '-' + filename
     module = module.split('.')
-    if hasattr(func, 'func_name'):
-        name = func.func_name
-    elif hasattr(func, '__name__'):
+    if hasattr(func, '__name__'):
         name = func.__name__
     else:
         name = 'unknown'
     # Hack to detect functions not defined at the module-level
     if resolv_alias:
         # TODO: Maybe add a warning here?
-        if hasattr(func, 'func_globals') and name in func.func_globals:
-            if not func.func_globals[name] is func:
+        if hasattr(func, '__globals__') and name in func.__globals__:
+            if not func.__globals__[name] is func:
                 name = '%s-alias' % name
-    if inspect.ismethod(func):
-        # We need to add the name of the class
-        if hasattr(func, 'im_class'):
-            klass = func.im_class
-            module.append(klass.__name__)
+    # if func is a method/nested function: add its attribute chain
+    if hasattr(func, '__qualname__'):
+        module += func.__qualname__.split('.')[:-1]
     if os.name == 'nt' and win_characters:
         # Stupid windows can't encode certain characters in filenames
         name = _clean_win_chars(name)
