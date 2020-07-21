@@ -31,6 +31,7 @@ from .func_inspect import format_call
 from .func_inspect import format_signature
 from .logger import Logger, format_time, pformat
 from ._store_backends import StoreBackendBase, FileSystemStoreBackend
+from ._store_backends import SlurmStoreBackend
 
 
 
@@ -67,7 +68,10 @@ class JobLibCollisionWarning(UserWarning):
     """
 
 
-_STORE_BACKENDS = {'local': FileSystemStoreBackend}
+_STORE_BACKENDS = {
+    'local': FileSystemStoreBackend,
+    'slurm': SlurmStoreBackend
+}
 
 
 def register_store_backend(backend_name, backend):
