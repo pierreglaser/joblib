@@ -420,7 +420,7 @@ class FileSystemStoreBackend(StoreBackendBase, StoreBackendMixin):
 
 def broadcast(method: types.MethodType):
     @wraps(method)
-    def meta_method(self: SlurmStoreBackend, *args, **kwargs):
+    def meta_method(self, *args, **kwargs):
         return [
             getattr(backend, method.__name__)(*args, **kwargs).result()
             for backend in self._local_store_backends
@@ -429,7 +429,7 @@ def broadcast(method: types.MethodType):
 
 def _passthrough_worker_0(method: types.MethodType):
     @wraps(method)
-    def meta_method(self: SlurmStoreBackend, *args, **kwargs):
+    def meta_method(self, *args, **kwargs):
         local_method = getattr(self._local_store_backends[0], method.__name__)
         return local_method(*args, **kwargs).result()
 
