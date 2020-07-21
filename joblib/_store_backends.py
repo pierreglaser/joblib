@@ -10,11 +10,15 @@ import warnings
 import collections
 import operator
 import threading
+import types
 from abc import ABCMeta, abstractmethod
+from functools import wraps
 
 from .backports import concurrency_safe_rename
 from .disk import mkdirp, memstr_to_bytes, rm_subdirs
 from . import numpy_pickle
+
+from distributed import Client, get_client  # XXX: needs an import guard
 
 CacheItemInfo = collections.namedtuple('CacheItemInfo',
                                        'path size last_access')
@@ -412,3 +416,74 @@ class FileSystemStoreBackend(StoreBackendBase, StoreBackendMixin):
 
         self.mmap_mode = mmap_mode
         self.verbose = verbose
+
+
+def broadcast(method: types.MethodType):
+    @wraps(method)
+    def meta_method(self: SlurmStoreBackend, *args, **kwargs):
+        return [
+            getattr(backend, method.__name__)(*args, **kwargs).result()
+            for backend in self._local_store_backends
+        ]
+
+
+def _passthrough_worker_0(method: types.MethodType):
+    @wraps(method)
+    def meta_method(self: SlurmStoreBackend, *args, **kwargs):
+        local_method = getattr(self._local_store_backends[0], method.__name__)
+        return local_method(*args, **kwargs).result()
+
+
+class SlurmStoreBackend(StoreBackendBase, StoreBackendMixin):
+    """A StoreBackend wrapping local FileSystemStoreBackend of compute nodes"""
+
+    @property
+    def client(self) -> Client:
+        return get_client()
+
+    def __init__(self):
+        assert hasattr(self.client, 'cluster')
+        self._local_store_backends = [
+            self.client.submit(
+                FileSystemStoreBackend, worker=worker_id, actor=True
+            ).result()
+            for worker_id in self.client.cluster.workers
+        ]
+
+    load_item = _passthrough_worker_0(FileSystemStoreBackend.load_item)
+
+    dump_item = broadcast(FileSystemStoreBackend.dump_item)
+
+    clear_item = broadcast(FileSystemStoreBackend.clear_item)
+    contains_item = _passthrough_worker_0(FileSystemStoreBackend.contains_item)
+
+    get_item_info = _passthrough_worker_0(FileSystemStoreBackend.get_item_info)
+    get_metadata = _passthrough_worker_0(FileSystemStoreBackend.get_metadata)
+
+    store_metadata = broadcast(FileSystemStoreBackend.store_metadata)
+
+    contains_path = _passthrough_worker_0(FileSystemStoreBackend.contains_path)
+
+    clear_path = broadcast(FileSystemStoreBackend.clear_path)
+
+    store_cached_func_code = broadcast(
+        FileSystemStoreBackend.store_cached_func_code
+    )
+
+    get_cached_func_code = _passthrough_worker_0(
+        FileSystemStoreBackend.get_cached_func_code
+    )
+    get_cached_func_info = _passthrough_worker_0(
+        FileSystemStoreBackend.get_cached_func_info
+    )
+
+    clear = broadcast(FileSystemStoreBackend.clear)
+
+    reduce_store_size = broadcast(FileSystemStoreBackend.reduce_store_size)
+
+    _get_items_to_delete = _passthrough_worker_0(
+        FileSystemStoreBackend._get_items_to_delete
+    )
+    _concurrency_safe_write = _passthrough_worker_0(
+        FileSystemStoreBackend._concurrency_safe_write
+    )
